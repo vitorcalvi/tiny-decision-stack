@@ -92,16 +92,22 @@ def decide(request: DecisionRequest) -> DecisionResponse:
         raise HTTPException(status_code=422, detail=f"options exceed MAX_OPTIONS={MAX_OPTIONS}")
     if not _inference_slots.acquire(blocking=False):
         raise HTTPException(status_code=503, detail="inference capacity is busy")
+
     try:
         future = _executor.submit(orchestrator.decide, request)
-        try:
-            return future.result(timeout=INFERENCE_TIMEOUT_SECONDS)
-        except FutureTimeoutError as exc:
-            future.cancel()
-            raise HTTPException(status_code=503, detail="inference timed out") from exc
-        except BackendValidationError as exc:
-            raise HTTPException(status_code=503, detail=f"backend output rejected: {exc}") from exc
-        except BackendError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-    finally:
+    except Exception:
         _inference_slots.release()
+        raise
+
+    # Python cannot safely kill a running model call. The slot is therefore
+    # released only when the worker actually finishes, even if the HTTP caller
+    # already received a timeout. This prevents timeout-driven overcommit/OOM.
+    future.add_done_callback(lambda _: _inference_slots.release())
+    try:
+        return future.result(timeout=INFERENCE_TIMEOUT_SECONDS)
+    except FutureTimeoutError as exc:
+        raise HTTPException(status_code=503, detail="inference timed out") from exc
+    except BackendValidationError as exc:
+        raise HTTPException(status_code=503, detail=f"backend output rejected: {exc}") from exc
+    except BackendError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
