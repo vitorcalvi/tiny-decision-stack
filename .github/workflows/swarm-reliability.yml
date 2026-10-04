@@ -59,7 +59,7 @@ jobs:
       - name: Seeded invariant and concurrency stress
         run: pytest -q tests/test_reliability_swarm.py
 
-  dependency-edge:
+  dependency_edge:
     name: dependencies ${{ matrix.profile }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -92,7 +92,7 @@ jobs:
       - run: pytest -q
       - run: python -m build
 
-  wheel-install:
+  wheel_install:
     name: clean wheel py${{ matrix.python }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -123,7 +123,7 @@ jobs:
           print(body)
           PY
 
-  container-runtime:
+  container_runtime:
     name: production container runtime
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -147,10 +147,10 @@ jobs:
           cat /tmp/live.json
           test "$(docker exec tds-swarm id -u)" = '10001'
           curl --fail --silent http://127.0.0.1:18080/health/ready | tee /tmp/ready.json
-          grep -q 'not_ready\|ready' /tmp/ready.json
+          grep -Eq 'not_ready|ready' /tmp/ready.json
           test "$(docker inspect --format='{{.State.Health.Status}}' tds-swarm)" != 'unhealthy'
 
-  real-model:
+  real_model:
     name: real LFM + OpenDecider CPU
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -221,17 +221,17 @@ jobs:
   gate:
     name: swarm gate
     if: always()
-    needs: [portable, fuzz, dependency-edge, wheel-install, container-runtime, real-model]
+    needs: [portable, fuzz, dependency_edge, wheel_install, container_runtime, real_model]
     runs-on: ubuntu-latest
     steps:
       - name: Require every swarm to pass
         env:
           PORTABLE: ${{ needs.portable.result }}
           FUZZ: ${{ needs.fuzz.result }}
-          DEPENDENCY: ${{ needs.dependency-edge.result }}
-          WHEEL: ${{ needs.wheel-install.result }}
-          CONTAINER: ${{ needs.container-runtime.result }}
-          REAL_MODEL: ${{ needs.real-model.result }}
+          DEPENDENCY: ${{ needs.dependency_edge.result }}
+          WHEEL: ${{ needs.wheel_install.result }}
+          CONTAINER: ${{ needs.container_runtime.result }}
+          REAL_MODEL: ${{ needs.real_model.result }}
         run: |
           python - <<'PY'
           import os
