@@ -1,0 +1,82 @@
+name: Credible Model Accuracy Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'benchmarks/credible-v1/**'
+      - 'src/tiny_decision_stack/credible_benchmark.py'
+      - 'scripts/build_credible_dataset.py'
+      - 'scripts/run_credible_benchmark.py'
+      - 'tests/test_credible_benchmark.py'
+      - '.github/workflows/credible-benchmark.yml'
+      - 'TESTING.md'
+      - 'benchmarks/README.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: credible-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  credible-model-accuracy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      MODEL_DEVICE: cpu
+      TOKENIZERS_PARALLELISM: 'false'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: credible-v1-${{ runner.os }}-lfm2.5-350m-opendecider-nano
+
+      - name: Install real-model and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[local,dev]'
+          python -m pip check
+
+      - name: Validate benchmark protocol and deterministic suite
+        run: |
+          pytest -q
+          python -m compileall -q src tests scripts
+
+      - name: Execute 600-case real-model holdout benchmark
+        run: |
+          mkdir -p benchmark-results/credible-v1
+          python scripts/run_credible_benchmark.py \
+            --benchmark-dir benchmarks/credible-v1 \
+            --output-dir benchmark-results/credible-v1 \
+            --target-precision 0.90 \
+            --bootstrap-reps 5000 \
+            2>&1 | tee benchmark-results/credible-v1/run.log
+
+      - name: Publish headline summary
+        if: always()
+        run: |
+          if [ -f benchmark-results/credible-v1/summary.md ]; then
+            cat benchmark-results/credible-v1/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Credible benchmark did not produce a summary.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credible-benchmark-${{ github.sha }}
+          path: benchmark-results/credible-v1/
+          if-no-files-found: error
+          retention-days: 90
