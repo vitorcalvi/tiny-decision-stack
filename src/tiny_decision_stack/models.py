@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class DecisionState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    facts: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    evidence_for: dict[str, list[str]] = Field(default_factory=dict)
+    evidence_against: dict[str, list[str]] = Field(default_factory=dict)
+    missing_information: list[str] = Field(default_factory=list)
 
 
 class DecisionRequest(BaseModel):
@@ -12,6 +23,13 @@ class DecisionRequest(BaseModel):
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     preprocess: Literal["auto", "direct", "normalize"] = "auto"
     clarify_on_low_confidence: bool = True
+
+    @field_validator("state", "question")
+    @classmethod
+    def reject_whitespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
 
     @field_validator("options")
     @classmethod
@@ -31,3 +49,8 @@ class DecisionResponse(BaseModel):
     mode: Literal["direct", "normalized", "clarified"]
     attempts: int
     normalized_state: dict | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: str
+    detail: str
