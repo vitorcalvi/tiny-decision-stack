@@ -87,5 +87,4 @@ class DecisionResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    error: str
     detail: str
