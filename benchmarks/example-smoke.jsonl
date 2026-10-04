@@ -1,0 +1,3 @@
+{"state":"Duplicate payment is verified and policy allows immediate refund.","question":"What action should be taken?","options":{"refund":"Refund a verified duplicate payment","escalate":"Send to human review"},"label":"refund"}
+{"state":"The request may be valid, but required authorization is unclear.","question":"What action should be taken?","options":{"approve":"Proceed automatically","escalate":"Require human review"},"label":"escalate"}
+{"state":"fraud_score: 0.98\naccount_locked: false","question":"What should the workflow do?","options":{"allow":"Allow automatically","block":"Block the action"},"label":"block"}
