@@ -1,0 +1,30 @@
+name: Local dependency integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
+
+jobs:
+  imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[local,dev]'
+      - name: Verify real dependency APIs
+        run: |
+          python - <<'PY'
+          import torch, transformers, opendecider
+          from transformers import AutoModelForCausalLM, AutoTokenizer
+          from opendecider import load
+          print('torch', torch.__version__)
+          print('transformers', transformers.__version__)
+          print('opendecider load callable', callable(load))
+          print('transformers APIs', AutoModelForCausalLM.__name__, AutoTokenizer.__name__)
+          PY
+      - name: Note model coverage
+        run: echo 'This workflow validates dependency resolution/API shape; it does not claim real-model quality or download both model weights.'
