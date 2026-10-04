@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -14,6 +14,41 @@ class DecisionState(BaseModel):
     evidence_for: dict[str, list[str]] = Field(default_factory=dict)
     evidence_against: dict[str, list[str]] = Field(default_factory=dict)
     missing_information: list[str] = Field(default_factory=list)
+
+    @field_validator("facts", "constraints", "risks", "missing_information", mode="before")
+    @classmethod
+    def canonicalize_string_lists(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    @field_validator("evidence_for", "evidence_against", mode="before")
+    @classmethod
+    def canonicalize_evidence(cls, value: Any) -> Any:
+        """Normalize a few safe small-model shape deviations into one strict schema."""
+        if value is None:
+            return {}
+        if isinstance(value, str):
+            return {"general": [value]}
+        if isinstance(value, list):
+            if not all(isinstance(item, str) for item in value):
+                raise ValueError("evidence lists must contain only strings")
+            return {"general": value}
+        if isinstance(value, dict):
+            normalized: dict[str, list[str]] = {}
+            for key, item in value.items():
+                if not isinstance(key, str) or not key.strip():
+                    raise ValueError("evidence keys must be non-empty strings")
+                if isinstance(item, str):
+                    normalized[key] = [item]
+                elif isinstance(item, list) and all(isinstance(entry, str) for entry in item):
+                    normalized[key] = item
+                else:
+                    raise ValueError("evidence values must be strings or string lists")
+            return normalized
+        raise ValueError("evidence must be a string, string list, or mapping")
 
 
 class DecisionRequest(BaseModel):
