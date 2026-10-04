@@ -1,0 +1,29 @@
+name: Reliability Swarm Real Model
+
+on:
+  push:
+    branches: [swarm-reliability-gate]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real_model:
+    name: real-lfm-opendecider-cpu
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MODEL_DEVICE: cpu
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[local,dev]'
+      - run: python -m pip check
+      - name: Verify dependency API shape
+        run: python -c "import accelerate,torch,transformers,opendecider; from opendecider import load; assert callable(load); print(accelerate.__version__, torch.__version__, transformers.__version__)"
+      - name: Real two-model smoke
+        run: python scripts/real_model_smoke.py
