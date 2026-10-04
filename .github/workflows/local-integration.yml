@@ -1,3 +1,4 @@
+# Expensive truth gate: validates real model loading/execution plus the production container path.
 name: Local dependency integration
 
 on:
