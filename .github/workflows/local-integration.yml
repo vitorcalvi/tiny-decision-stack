@@ -4,9 +4,12 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '17 4 * * 1'
+  push:
+    paths:
+      - '.github/workflows/local-integration.yml'
 
 jobs:
-  imports:
+  imports-and-container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +21,18 @@ jobs:
       - name: Verify real dependency APIs
         run: |
           python - <<'PY'
-          import torch, transformers, opendecider
+          import accelerate, torch, transformers, opendecider
           from transformers import AutoModelForCausalLM, AutoTokenizer
           from opendecider import load
+          print('accelerate', accelerate.__version__)
           print('torch', torch.__version__)
           print('transformers', transformers.__version__)
           print('opendecider load callable', callable(load))
           print('transformers APIs', AutoModelForCausalLM.__name__, AutoTokenizer.__name__)
           PY
+      - name: Validate compose
+        run: docker compose config
+      - name: Build production image
+        run: docker build -t tiny-decision-stack:ci .
       - name: Note model coverage
-        run: echo 'This workflow validates dependency resolution/API shape; it does not claim real-model quality or download both model weights.'
+        run: echo 'This workflow validates dependency resolution/API shape and container build; it does not claim real-model decision quality or download both model weights.'
