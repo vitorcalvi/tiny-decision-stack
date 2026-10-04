@@ -1,0 +1,88 @@
+name: Reliability Swarm Heavy
+
+on:
+  push:
+    branches: [swarm-reliability-gate]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container_runtime:
+    name: production-container-runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose config
+      - run: docker build -t tiny-decision-stack:swarm .
+      - name: Boot and probe image
+        run: |
+          set -euo pipefail
+          docker run -d --name tds-swarm -p 18080:8080 tiny-decision-stack:swarm
+          trap 'docker rm -f tds-swarm >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/health/live >/tmp/live.json; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/live.json
+          test "$(docker exec tds-swarm id -u)" = '10001'
+          curl --fail --silent http://127.0.0.1:18080/health/ready | tee /tmp/ready.json
+          grep -Eq 'not_ready|ready' /tmp/ready.json
+          test "$(docker inspect --format='{{.State.Health.Status}}' tds-swarm)" != 'unhealthy'
+
+  real_model:
+    name: real-lfm-opendecider-cpu
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MODEL_DEVICE: cpu
+      HF_HOME: ${{ runner.temp }}/hf-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[local,dev]'
+      - run: python -m pip check
+      - name: Verify dependency API shape
+        run: |
+          python -c "import accelerate,torch,transformers,opendecider; from opendecider import load; assert callable(load); print(accelerate.__version__, torch.__version__, transformers.__version__)"
+      - name: Exercise real model chain twice
+        run: |
+          python - <<'PY'
+          from tiny_decision_stack.backends import LocalLFMBackend, LocalOpenDeciderBackend
+          from tiny_decision_stack.models import DecisionRequest
+          from tiny_decision_stack.orchestrator import DecisionOrchestrator
+
+          semantic = LocalLFMBackend(device='cpu')
+          decider = LocalOpenDeciderBackend(device='cpu')
+          assert semantic.status == 'not_loaded'
+          assert decider.status == 'not_loaded'
+          stack = DecisionOrchestrator(semantic=semantic, decider=decider, direct_max_chars=1)
+          cases = [
+              ('A customer reports a duplicate card charge. Logs confirm the same order was charged twice.', {'refund': 'Refund a verified duplicate payment', 'escalate': 'Send uncertain cases to human review'}),
+              ('The payment is duplicated but authorization metadata is unclear.', {'refund': 'Refund only a verified duplicate', 'review': 'Require human review before action'}),
+          ]
+          for state, options in cases:
+              result = stack.decide(DecisionRequest(
+                  state=state,
+                  question='What action should the workflow take?',
+                  options=options,
+                  preprocess='normalize',
+                  confidence_threshold=0.0,
+                  clarify_on_low_confidence=False,
+              ))
+              assert result.choice in options
+              assert result.mode == 'normalized'
+              assert result.normalized_state is not None
+              assert set(result.probabilities) == set(options)
+              assert abs(sum(result.probabilities.values()) - 1.0) <= 0.02
+              print(result.model_dump_json())
+          assert semantic.status == 'ready'
+          assert decider.status == 'ready'
+          PY
