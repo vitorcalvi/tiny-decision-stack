@@ -1,4 +1,4 @@
-# Expensive truth gate: validates real model loading/execution plus the production container path.
+# Expensive redundant truth gate: validates real model execution plus production image build.
 name: Local dependency integration
 
 on:
@@ -9,66 +9,30 @@ on:
     paths:
       - '.github/workflows/local-integration.yml'
 
+permissions:
+  contents: read
+
 jobs:
   imports-models-and-container:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[local,dev]'
+      - run: python -m pip check
       - name: Verify real dependency APIs
-        run: |
-          python - <<'PY'
-          import accelerate, torch, transformers, opendecider
-          from transformers import AutoModelForCausalLM, AutoTokenizer
-          from opendecider import load
-          print('accelerate', accelerate.__version__)
-          print('torch', torch.__version__)
-          print('transformers', transformers.__version__)
-          print('opendecider load callable', callable(load))
-          print('transformers APIs', AutoModelForCausalLM.__name__, AutoTokenizer.__name__)
-          PY
+        run: python -c "import accelerate,torch,transformers,opendecider; from opendecider import load; assert callable(load); print(accelerate.__version__, torch.__version__, transformers.__version__)"
       - name: Real two-model CPU smoke
         env:
           MODEL_DEVICE: cpu
-          HF_HOME: ${{ runner.temp }}/hf-cache
-        run: |
-          python - <<'PY'
-          from tiny_decision_stack.backends import LocalLFMBackend, LocalOpenDeciderBackend
-          from tiny_decision_stack.models import DecisionRequest
-          from tiny_decision_stack.orchestrator import DecisionOrchestrator
-
-          options = {
-              'refund': 'Refund a verified duplicate payment',
-              'escalate': 'Send uncertain or unauthorized cases to human review',
-          }
-          orchestrator = DecisionOrchestrator(
-              semantic=LocalLFMBackend(device='cpu'),
-              decider=LocalOpenDeciderBackend(device='cpu'),
-              direct_max_chars=1,
-          )
-          request = DecisionRequest(
-              state='A customer reports a duplicate card charge. Payment logs confirm the same order was charged twice.',
-              question='What action should the workflow take?',
-              options=options,
-              preprocess='normalize',
-              confidence_threshold=0.0,
-              clarify_on_low_confidence=False,
-          )
-          result = orchestrator.decide(request)
-          assert result.choice in options
-          assert result.mode == 'normalized'
-          assert result.normalized_state is not None
-          assert abs(sum(result.probabilities.values()) - 1.0) <= 0.02
-          print(result.model_dump_json(indent=2))
-          PY
+        run: python scripts/real_model_smoke.py
       - name: Validate compose
         run: docker compose config
       - name: Build production image
         run: docker build -t tiny-decision-stack:ci .
       - name: Note model-quality boundary
-        run: echo 'A smoke pass proves the real models can load and execute together; it does not establish domain accuracy or a 95% precision claim.'
+        run: echo 'This proves integration/runtime viability, not domain accuracy or a 95% precision claim.'

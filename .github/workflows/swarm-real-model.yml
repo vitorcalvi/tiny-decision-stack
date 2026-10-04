@@ -2,11 +2,28 @@ name: Reliability Swarm Real Model
 
 on:
   push:
-    branches: [swarm-reliability-gate]
+    branches: [main, swarm-reliability-gate]
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'scripts/real_model_smoke.py'
+      - '.github/workflows/swarm-real-model.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'scripts/real_model_smoke.py'
+      - '.github/workflows/swarm-real-model.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '29 4 * * 0'
 
 permissions:
   contents: read
+
+concurrency:
+  group: real-model-swarm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   real_model:

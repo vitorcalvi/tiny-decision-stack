@@ -2,11 +2,30 @@ name: Reliability Swarm Container
 
 on:
   push:
-    branches: [swarm-reliability-gate]
+    branches: [main, swarm-reliability-gate]
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'pyproject.toml'
+      - 'src/**'
+      - '.github/workflows/swarm-heavy.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'pyproject.toml'
+      - 'src/**'
+      - '.github/workflows/swarm-heavy.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '13 4 * * 0'
 
 permissions:
   contents: read
+
+concurrency:
+  group: container-swarm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   container_runtime:
