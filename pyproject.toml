@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tiny-decision-stack"
+version = "0.1.0"
+description = "Tiny local decision stack using LFM2.5-350M and OpenDecider-nano"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Vitor Calvi"}]
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "pydantic>=2.8",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+local = [
+  "torch>=2.4",
+  "transformers>=5.0",
+  "opendecider>=0.7.0",
+]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tiny_decision_stack"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
