@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
-from .backends import DecisionBackend, ScoredChoice, SemanticBackend
+from .backends import DecisionBackend, ScoredChoice, SemanticBackend, validate_scored_choice
 from .models import DecisionRequest, DecisionResponse
 
 
@@ -18,10 +19,29 @@ class DecisionOrchestrator:
             return True
         if request.preprocess == "direct":
             return False
-        # Auto mode intentionally uses a simple, explainable heuristic.
-        # Short states go straight to the calibrated decider; longer states are
-        # compressed into a decision-state schema first.
-        return len(request.state) > self.direct_max_chars
+
+        state = request.state.strip()
+        if len(state) > self.direct_max_chars:
+            return True
+
+        # Structured JSON-like inputs and concise key/value states are already good
+        # decision-head inputs; messy prose with ambiguity/conflict markers gets a
+        # semantic pass even when short.
+        if state.startswith(("{", "[")):
+            try:
+                json.loads(state)
+                return False
+            except json.JSONDecodeError:
+                pass
+        if "\n" in state and all(":" in line for line in state.splitlines() if line.strip()):
+            return False
+
+        lowered = f" {state.lower()} "
+        ambiguity_markers = (
+            " maybe ", " unclear ", " however ", " but ", " although ",
+            " conflicting ", " not sure ", " unknown ", " except ",
+        )
+        return any(marker in lowered for marker in ambiguity_markers)
 
     @staticmethod
     def _response(
@@ -59,7 +79,9 @@ class DecisionOrchestrator:
             state_for_decider = request.state
             mode = "direct"
 
-        first = self.decider.decide(state_for_decider, request.question, request.options)
+        first = validate_scored_choice(
+            self.decider.decide(state_for_decider, request.question, request.options), request.options
+        )
         if first.confidence >= threshold or not request.clarify_on_low_confidence:
             return self._response(
                 first,
@@ -69,7 +91,6 @@ class DecisionOrchestrator:
                 normalized_state=normalized,
             )
 
-        # Low-confidence direct decisions get a semantic pass before retrying.
         if normalized is None:
             normalized = self.semantic.normalize(request.state, request.question, request.options)
 
@@ -80,7 +101,9 @@ class DecisionOrchestrator:
             request.options,
             first.probabilities,
         )
-        second = self.decider.decide(clarified, request.question, request.options)
+        second = validate_scored_choice(
+            self.decider.decide(clarified, request.question, request.options), request.options
+        )
         return self._response(
             second,
             threshold=threshold,
