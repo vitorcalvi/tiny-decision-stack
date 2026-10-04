@@ -1,0 +1,17 @@
+services:
+  tiny-decision-stack:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      LFM_MODEL: ${LFM_MODEL:-LiquidAI/LFM2.5-350M}
+      OPENDECIDER_MODEL: ${OPENDECIDER_MODEL:-manjunathshiva/opendecider-nano}
+      MODEL_DEVICE: ${MODEL_DEVICE:-}
+      DIRECT_MAX_CHARS: ${DIRECT_MAX_CHARS:-500}
+      DEFAULT_CONFIDENCE_THRESHOLD: ${DEFAULT_CONFIDENCE_THRESHOLD:-0.75}
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+
+volumes:
+  huggingface-cache:
