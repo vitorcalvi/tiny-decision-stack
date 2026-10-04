@@ -4,6 +4,20 @@ The benchmark harness is for **labelled operational decisions**. It measures the
 
 `example-smoke.jsonl` is intentionally tiny and illustrative. **Do not use its results as evidence of model quality.** Bring your own representative labelled JSONL dataset for release claims.
 
+## Credible frozen benchmark
+
+For repository-level model-quality evidence, use `credible-v1/` rather than the 3-case smoke fixture. It contains 354 calibration cases and a **600-case disjoint holdout** across BoolQ, ARC-Challenge and Banking77. Thresholds are selected on calibration only; holdout metrics include Wilson 95% intervals and paired bootstrap comparison of the full stack against OpenDecider-only.
+
+```bash
+pip install -e '.[local,dev]'
+MODEL_DEVICE=cpu python scripts/run_credible_benchmark.py \
+  --benchmark-dir benchmarks/credible-v1 \
+  --output-dir benchmark-results/credible-v1 \
+  --target-precision 0.90
+```
+
+See `credible-v1/README.md`, `credible-v1/manifest.json`, and `credible-v1/LICENSES.md` for the frozen protocol, provenance, hashes and interpretation limits. Public benchmark contamination remains possible, so results are evidence for this suite rather than proof of universal decision quality.
+
 Each line must contain:
 
 ```json
