@@ -133,9 +133,10 @@ def test_preprocess_overrides_auto():
 
 
 def test_threshold_boundaries_and_no_clarify():
-    out = DecisionOrchestrator(FakeSemantic(), FakeDecider(scored(confidence=0.0, probabilities={"refund": 0.0, "escalate": 1.0}))).decide(
-        req(confidence_threshold=0.0, clarify_on_low_confidence=False)
-    )
+    out = DecisionOrchestrator(
+        FakeSemantic(),
+        FakeDecider(scored(confidence=0.0, probabilities={"refund": 0.0, "escalate": 1.0})),
+    ).decide(req(confidence_threshold=0.0, clarify_on_low_confidence=False))
     assert not out.abstained
     out = DecisionOrchestrator(FakeSemantic(), FakeDecider(scored(confidence=0.99))).decide(
         req(confidence_threshold=1.0, clarify_on_low_confidence=False)
@@ -161,11 +162,33 @@ def test_invalid_scored_choice_fails_closed(bad):
         validate_scored_choice(bad, req().options)
 
 
-def test_schema_rejects_malformed_semantic_output():
+def test_schema_canonicalizes_safe_small_model_shapes():
+    value = _extract_json(
+        '{"facts":"one fact","constraints":[],"risks":[],"evidence_for":"payment_logs",'
+        '"evidence_against":["authorization_missing"],"missing_information":null}'
+    )
+    assert value["facts"] == ["one fact"]
+    assert value["evidence_for"] == {"general": ["payment_logs"]}
+    assert value["evidence_against"] == {"general": ["authorization_missing"]}
+    assert value["missing_information"] == []
+
+
+def test_schema_rejects_unsafe_semantic_output():
     with pytest.raises(Exception):
-        _extract_json('{"facts":"not-a-list"}')
+        _extract_json(
+            '{"facts":123,"constraints":[],"risks":[],"evidence_for":{},'
+            '"evidence_against":{},"missing_information":[]}'
+        )
     with pytest.raises(Exception):
-        _extract_json('{"facts":[],"constraints":[],"risks":[],"evidence_for":{},"evidence_against":{},"missing_information":[],"extra":1}')
+        _extract_json(
+            '{"facts":[],"constraints":[],"risks":[],"evidence_for":{},"evidence_against":{},'
+            '"missing_information":[],"extra":1}'
+        )
+    with pytest.raises(Exception):
+        _extract_json(
+            '{"facts":[],"constraints":[],"risks":[],"evidence_for":{"x":[{"bad":1}]},'
+            '"evidence_against":{},"missing_information":[]}'
+        )
 
 
 def test_schema_accepts_unicode_and_prompt_like_data():
