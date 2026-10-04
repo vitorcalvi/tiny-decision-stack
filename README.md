@@ -1,6 +1,12 @@
 # Tiny Decision Stack
 
-> **Status: Experimental v0.1.x** — the orchestration, validation, API, packaging, and fake-backend release gates are tested. Real-model decision quality must be measured on your own labelled decisions before production use.
+[![CI](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/ci.yml)
+[![Reliability Swarm](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-reliability.yml/badge.svg)](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-reliability.yml)
+[![Container Runtime](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-heavy.yml/badge.svg)](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-heavy.yml)
+[![Real Model](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-real-model.yml/badge.svg)](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/swarm-real-model.yml)
+[![Validation Evidence](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/validation-evidence.yml/badge.svg)](https://github.com/vitorcalvi/tiny-decision-stack/actions/workflows/validation-evidence.yml)
+
+> **Status: Experimental v0.1.x** — the orchestration, validation, API, packaging, portability, container runtime, and real-model integration gates are tested. Real-model decision quality must be measured on your own labelled decisions before production use.
 
 Tiny Decision Stack is a small local decision service that combines two complementary models:
 
@@ -8,6 +14,19 @@ Tiny Decision Stack is a small local decision service that combines two compleme
 - **manjunathshiva/opendecider-nano** — typed final choice with per-option probabilities.
 
 The design is asymmetric: **LFM structures evidence; OpenDecider chooses.** This repository does not claim that the combined stack is more accurate than OpenDecider alone until a representative labelled comparison proves it.
+
+## Public validation evidence
+
+The repository publishes its reliability methodology rather than asking users to trust a green badge.
+
+- [`TESTING.md`](TESTING.md) documents every test layer, failure class, reproducible command, and claim-to-evidence mapping.
+- [`VALIDATION_REPORT.md`](VALIDATION_REPORT.md) records the dated release-gate evidence, exact commit SHA, public GitHub Actions run links, and the boundary between software reliability and model-quality claims.
+- `tests/test_contract_validation.py` provides explicit audit-friendly fail-closed contract tests in addition to the seeded fuzz swarm.
+- `.github/workflows/validation-evidence.yml` publishes a per-commit downloadable evidence bundle containing the exact SHA/environment, dependency snapshot, collected test inventory, verbose pytest log, JUnit XML, package hashes, Compose resolution, and benchmark-fixture identity.
+
+The 2026-10-04 baseline release gate completed **28/28 GitHub Actions jobs successfully on the same exact commit**, including the 22-job cross-platform/fuzz/dependency/wheel swarm, normal Python 3.10–3.12 CI, production-container boot/probes, actual LFM2.5→OpenDecider CPU inference, and a redundant full integration lane. See [`VALIDATION_REPORT.md`](VALIDATION_REPORT.md) for the exact public run links.
+
+A green software gate means the tested implementation behaved correctly under those tests. It does **not** mean the models are 95% accurate on an arbitrary domain; that requires held-out labelled benchmark data.
 
 ## Architecture
 
@@ -138,7 +157,9 @@ python -m compileall -q src tests
 python -m build
 ```
 
-Fast CI runs these gates on Python 3.10, 3.11, and 3.12 without downloading model weights. A separate scheduled/manual workflow installs `[local,dev]` and validates the real Torch/Transformers/OpenDecider dependency APIs. That workflow verifies dependency integration, not decision quality.
+Fast CI runs these gates on Python 3.10, 3.11, and 3.12 without downloading model weights. The Reliability Swarm additionally runs the suite across Linux/macOS/Windows, deterministic fuzz shards, dependency floors/current versions, and clean-wheel installations. Separate workflows validate the production container and actual LFM2.5→OpenDecider CPU inference.
+
+For the exact methodology and reproduction commands, see [`TESTING.md`](TESTING.md).
 
 ## Docker
 
@@ -167,7 +188,7 @@ Always review the current upstream license/NOTICE files before redistribution or
 
 ## What is verified vs not yet claimed
 
-**Verified by repository-controlled gates:** request/schema validation, decision-output validation, direct/normalize/clarify/abstain orchestration, API error semantics, benchmark metric math, Python package build/import, and multi-version fast CI.
+**Verified by repository-controlled gates:** request/schema validation, decision-output validation, direct/normalize/clarify/abstain orchestration, API error semantics, deterministic fuzz/concurrency invariants, benchmark metric math, Python package build/import, Python 3.10–3.12 CI, Linux/macOS/Windows deterministic-suite portability, dependency floor/current compatibility, clean-wheel installation, production-container build/boot/probes, and actual LFM2.5 + OpenDecider integration smoke execution.
 
 **Not established by this repository alone:** that LFM + OpenDecider beats OpenDecider-only on your domain; that a 95% precision target is achieved; production-scale latency/throughput; prompt-injection immunity; or suitability for high-stakes autonomous actions.
 
