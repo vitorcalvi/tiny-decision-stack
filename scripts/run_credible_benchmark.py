@@ -53,10 +53,9 @@ def git_sha() -> str | None:
         return None
 
 
-def collect_traces(orchestrator, cases, thresholds, predictions_handle, split_name: str):
+def collect_traces(orchestrator, cases, max_threshold: float, predictions_handle, split_name: str):
     direct = []
     full = []
-    max_threshold = max(thresholds)
     for idx, case in enumerate(cases, 1):
         d, f = trace_case_pair(orchestrator, case, max_threshold=max_threshold)
         direct.append(d)
@@ -172,15 +171,21 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     predictions_path = args.output_dir / "per_case_traces.jsonl"
     with predictions_path.open("w", encoding="utf-8") as pred:
-        cal_direct, cal_full = collect_traces(orchestrator, calibration, thresholds, pred, "calibration")
+        cal_direct, cal_full = collect_traces(
+            orchestrator, calibration, max(thresholds), pred, "calibration"
+        )
         full_selection = select_threshold(cal_full, thresholds=thresholds, target_precision=args.target_precision, role="calibration")
         direct_selection = select_threshold(cal_direct, thresholds=thresholds, target_precision=args.target_precision, role="calibration")
-        print("full_stack chosen threshold", full_selection["chosen_threshold"], "target_met", full_selection["target_met"], flush=True)
-        print("direct_only chosen threshold", direct_selection["chosen_threshold"], "target_met", direct_selection["target_met"], flush=True)
-        hold_direct, hold_full = collect_traces(orchestrator, holdout, thresholds, pred, "holdout")
-
-    full_threshold = full_selection["chosen_threshold"]
-    direct_threshold = direct_selection["chosen_threshold"]
+        full_threshold = full_selection["chosen_threshold"]
+        direct_threshold = direct_selection["chosen_threshold"]
+        print("full_stack chosen threshold", full_threshold, "target_met", full_selection["target_met"], flush=True)
+        print("direct_only chosen threshold", direct_threshold, "target_met", direct_selection["target_met"], flush=True)
+        # Holdout is not a threshold sweep: only precompute clarification if the frozen
+        # full-stack calibration threshold can actually invoke it. This preserves the
+        # evaluation policy while avoiding hundreds of unnecessary semantic-model calls.
+        hold_direct, hold_full = collect_traces(
+            orchestrator, holdout, full_threshold, pred, "holdout"
+        )
     full_out = [simulate(trace, full_threshold) for trace in hold_full]
     direct_out = [simulate(trace, direct_threshold) for trace in hold_direct]
     full_zero = [simulate(trace, 0.0) for trace in hold_full]
