@@ -9,8 +9,9 @@ on:
       - '.github/workflows/local-integration.yml'
 
 jobs:
-  imports-and-container:
+  imports-models-and-container:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,9 +31,43 @@ jobs:
           print('opendecider load callable', callable(load))
           print('transformers APIs', AutoModelForCausalLM.__name__, AutoTokenizer.__name__)
           PY
+      - name: Real two-model CPU smoke
+        env:
+          MODEL_DEVICE: cpu
+          HF_HOME: ${{ runner.temp }}/hf-cache
+        run: |
+          python - <<'PY'
+          from tiny_decision_stack.backends import LocalLFMBackend, LocalOpenDeciderBackend
+          from tiny_decision_stack.models import DecisionRequest
+          from tiny_decision_stack.orchestrator import DecisionOrchestrator
+
+          options = {
+              'refund': 'Refund a verified duplicate payment',
+              'escalate': 'Send uncertain or unauthorized cases to human review',
+          }
+          orchestrator = DecisionOrchestrator(
+              semantic=LocalLFMBackend(device='cpu'),
+              decider=LocalOpenDeciderBackend(device='cpu'),
+              direct_max_chars=1,
+          )
+          request = DecisionRequest(
+              state='A customer reports a duplicate card charge. Payment logs confirm the same order was charged twice.',
+              question='What action should the workflow take?',
+              options=options,
+              preprocess='normalize',
+              confidence_threshold=0.0,
+              clarify_on_low_confidence=False,
+          )
+          result = orchestrator.decide(request)
+          assert result.choice in options
+          assert result.mode == 'normalized'
+          assert result.normalized_state is not None
+          assert abs(sum(result.probabilities.values()) - 1.0) <= 0.02
+          print(result.model_dump_json(indent=2))
+          PY
       - name: Validate compose
         run: docker compose config
       - name: Build production image
         run: docker build -t tiny-decision-stack:ci .
-      - name: Note model coverage
-        run: echo 'This workflow validates dependency resolution/API shape and container build; it does not claim real-model decision quality or download both model weights.'
+      - name: Note model-quality boundary
+        run: echo 'A smoke pass proves the real models can load and execute together; it does not establish domain accuracy or a 95% precision claim.'
