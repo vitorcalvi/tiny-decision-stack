@@ -1,0 +1,67 @@
+{
+  "files": {
+    "calibration.jsonl": {
+      "count": 354,
+      "sha256": "492c6fa2505a256bfa0bba795f9139b877346d7b669e942a2639392aaf7a1392"
+    },
+    "holdout.jsonl": {
+      "count": 600,
+      "sha256": "8a3cafed7a225be02317ca1c045438f44558060dbdf689e94414890dfe22c64f"
+    }
+  },
+  "limitations": [
+    "Threshold selection is disjoint from holdout evaluation, but these are public benchmarks and may have appeared in model pretraining.",
+    "The suite measures zero-shot decision/classification behavior for these tasks; it does not prove universal decision quality.",
+    "Banking77 uses all 77 intent names as candidate options, so it is materially harder than binary/four-way tasks."
+  ],
+  "protocol": {
+    "banking77_holdout": "stratified: 2 per intent + 1 extra from 46 deterministically ranked intents",
+    "calibration_by_task": {
+      "arc_challenge": 100,
+      "banking77": 154,
+      "boolq": 100
+    },
+    "calibration_count": 354,
+    "calibration_role": "threshold selection only",
+    "holdout_by_task": {
+      "arc_challenge": 200,
+      "banking77": 200,
+      "boolq": 200
+    },
+    "holdout_count": 600,
+    "holdout_role": "final unbiased evaluation only",
+    "target_holdout_count": 600
+  },
+  "selection_seed": "tiny-decision-stack-credible-v1-2026-10-04",
+  "sources": {
+    "arc_challenge": {
+      "calibration_source_split": "train",
+      "dataset": "allenai/ai2_arc / ARC-Challenge",
+      "holdout_source_split": "test",
+      "license": "CC BY-SA 4.0",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "upstream": "https://huggingface.co/datasets/allenai/ai2_arc"
+    },
+    "banking77": {
+      "calibration_source_split": "train",
+      "dataset": "BANKING77",
+      "holdout_source_split": "test",
+      "license": "CC BY 4.0",
+      "revision": "57ec275d8078af65b7731c2a98be812d844a6d6b",
+      "source_sha256": {
+        "test.csv": "d12d6e3bc4c3103966ae786dc435913c0c563dfa328f5a3646d0e62cfeeb474d",
+        "train.csv": "b06e26ac675513959a63135f11b94ea7786ed02da65db93a5650d8838cbc664b"
+      },
+      "upstream": "https://github.com/PolyAI-LDN/task-specific-datasets"
+    },
+    "boolq": {
+      "calibration_source_split": "train",
+      "dataset": "google/boolq",
+      "holdout_source_split": "validation",
+      "license": "CC BY-SA 3.0",
+      "revision": "35b264d03638db9f4ce671b711558bf7ff0f80d5",
+      "upstream": "https://huggingface.co/datasets/google/boolq"
+    }
+  },
+  "suite": "credible-v1"
+}

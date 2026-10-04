@@ -200,6 +200,15 @@ This workflow creates a downloadable evidence bundle for reviewers. It records:
 
 The bundle is uploaded as a GitHub Actions artifact tied to the exact commit SHA.
 
+
+### 7. Credible model-accuracy benchmark — `.github/workflows/credible-benchmark.yml`
+
+This is the statistical model-quality lane. It is intentionally separate from the real-model smoke and deterministic reliability swarm. It evaluates **600 frozen holdout cases** (200 BoolQ, 200 ARC-Challenge, 200 Banking77) after choosing one confidence threshold per variant on a separate 354-case calibration split.
+
+The workflow compares the production full stack against an OpenDecider-only baseline on identical cases and reports raw top-1 accuracy, calibrated effective accuracy, selective precision, coverage, 95% Wilson intervals, paired bootstrap 95% confidence intervals, per-task metrics, normalization/clarification rates, and latency. Low model accuracy does not fail CI; only execution, protocol, or data-integrity failures do.
+
+The benchmark is scientifically stronger than the 3-case smoke fixture because holdout labels never participate in threshold selection. The public datasets can still have pretraining contamination, so results should be described as performance on the frozen `credible-v1` suite, not universal decision accuracy.
+
 ## How to reproduce locally
 
 ### Fast deterministic suite
@@ -248,6 +257,18 @@ curl -fsS http://localhost:8080/health/live
 curl -fsS http://localhost:8080/health/ready
 ```
 
+### Credible frozen real-model benchmark
+
+```bash
+pip install -e '.[local,dev]'
+MODEL_DEVICE=cpu python scripts/run_credible_benchmark.py \
+  --benchmark-dir benchmarks/credible-v1 \
+  --output-dir benchmark-results/credible-v1 \
+  --target-precision 0.90
+```
+
+The threshold is chosen using `calibration.jsonl` only. `holdout.jsonl` is then evaluated once at that frozen threshold. Do not retune after looking at holdout results.
+
 ### Benchmark your own labelled decisions
 
 ```bash
@@ -256,7 +277,7 @@ python -m tiny_decision_stack.benchmark your-held-out-decisions.jsonl \
   --target-precision 0.95
 ```
 
-A trustworthy model-quality claim requires held-out labels representative of the deployment domain. The included smoke fixture is not sufficient for such a claim.
+For a deployment claim, your own held-out data should match the intended domain. The included 3-case smoke fixture remains insufficient model-quality evidence.
 
 ## Claim-to-evidence matrix
 
@@ -273,8 +294,8 @@ A trustworthy model-quality claim requires held-out labels representative of the
 | Production image builds and boots | container runtime workflow | Verified |
 | Container runs non-root | container runtime workflow | Verified |
 | Actual LFM2.5 + OpenDecider execute together | real-model + integration workflows | Verified integration |
-| LFM+OpenDecider is more accurate than OpenDecider alone | requires representative labelled benchmark | **Not claimed** |
-| 95% precision is achieved | requires representative held-out benchmark | **Not claimed** |
+| LFM+OpenDecider is more accurate than OpenDecider alone | credible-v1 paired holdout benchmark | Claim only if the executed holdout CI/result supports it |
+| A selective precision target is achieved | credible-v1 calibration + untouched holdout | Claim only from holdout result; calibration target alone is not evidence |
 | Prompt-injection immunity | cannot be established by current tests | **Not claimed** |
 | Internet-facing production security | external gateway/auth/rate limiting required | **Not claimed** |
 | Suitability for high-stakes autonomous decisions | domain-specific validation required | **Not claimed** |
