@@ -1,0 +1,136 @@
+name: Validation Evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'benchmarks/**'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'README.md'
+      - 'TESTING.md'
+      - 'VALIDATION_REPORT.md'
+      - '.github/workflows/validation-evidence.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'benchmarks/**'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'README.md'
+      - 'TESTING.md'
+      - 'VALIDATION_REPORT.md'
+      - '.github/workflows/validation-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    name: reproducible-evidence-bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install deterministic test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+          python -m pip check
+
+      - name: Record immutable environment manifest
+        run: |
+          mkdir -p evidence
+          python - <<'PY'
+          import json
+          import os
+          import platform
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          manifest = {
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "sha": os.environ.get("GITHUB_SHA"),
+              "ref": os.environ.get("GITHUB_REF"),
+              "event": os.environ.get("GITHUB_EVENT_NAME"),
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+              "python": sys.version,
+              "platform": platform.platform(),
+              "machine": platform.machine(),
+          }
+          Path("evidence/manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+          python -VV > evidence/python-version.txt 2>&1
+          python -m pip freeze > evidence/pip-freeze.txt
+          git rev-parse HEAD > evidence/git-sha.txt
+          git status --porcelain=v1 > evidence/git-status.txt
+
+      - name: Collect exact public test inventory
+        run: pytest --collect-only -q > evidence/collected-tests.txt
+
+      - name: Run verbose deterministic suite with JUnit evidence
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -vv --junitxml=evidence/pytest-junit.xml 2>&1 | tee evidence/pytest.log
+
+      - name: Build distributable package and hash outputs
+        shell: bash
+        run: |
+          python -m build 2>&1 | tee evidence/build.log
+          ls -lh dist > evidence/dist-files.txt
+          sha256sum dist/* > evidence/dist-sha256.txt
+
+      - name: Validate Compose and record resolved configuration
+        run: docker compose config > evidence/compose-config.txt
+
+      - name: Record benchmark fixture identity
+        shell: bash
+        run: |
+          sha256sum benchmarks/example-smoke.jsonl > evidence/benchmark-fixture-sha256.txt
+          wc -l benchmarks/example-smoke.jsonl > evidence/benchmark-fixture-lines.txt
+          printf '%s\n' 'The example benchmark fixture is a smoke/demo fixture, not model-quality evidence.' > evidence/benchmark-boundary.txt
+
+      - name: Write evidence summary
+        shell: bash
+        run: |
+          {
+            echo '## Validation evidence bundle'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Run: \`${GITHUB_RUN_ID}\`"
+            echo '- Deterministic pytest: PASS'
+            echo '- Dependency consistency: PASS'
+            echo '- Package build: PASS'
+            echo '- Compose validation: PASS'
+            echo '- Full test inventory and JUnit XML are attached as a workflow artifact.'
+            echo
+            echo 'Real-model inference and production-container boot are intentionally validated by their dedicated workflows.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload immutable validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-evidence-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 90
