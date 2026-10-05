@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+from importlib.metadata import PackageNotFoundError, version
 
 import pytest
 from pydantic import ValidationError
 
-from tiny_decision_stack.api import _env_float, _env_int
+import tiny_decision_stack
+from tiny_decision_stack.api import _env_float, _env_int, app
 from tiny_decision_stack.backends import (
     BackendValidationError,
     LocalLFMBackend,
@@ -211,3 +213,14 @@ def test_env_helpers_enforce_configured_bounds(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("TDS_TEST_FLOAT", "1.1")
     with pytest.raises(RuntimeError):
         _env_float("TDS_TEST_FLOAT", 0.5, 0.0, 1.0)
+
+
+def test_reported_version_matches_installed_distribution() -> None:
+    """`__version__` and the FastAPI app version are the package's public identity."""
+    assert tiny_decision_stack.__version__ == app.version
+    try:
+        installed = version("tiny-decision-stack")
+    except PackageNotFoundError:
+        # Source-only runs (no installed distribution) still validate identity above.
+        return
+    assert installed == tiny_decision_stack.__version__
