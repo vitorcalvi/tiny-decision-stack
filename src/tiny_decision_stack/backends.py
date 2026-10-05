@@ -35,10 +35,9 @@ class SemanticBackend(Protocol):
     def clarify(
         self,
         state: str,
-        normalized: dict[str, Any],
         question: str,
         options: dict[str, str],
-        probabilities: dict[str, float],
+        reason: str,
     ) -> dict[str, Any]: ...
 
 
@@ -182,21 +181,21 @@ class LocalLFMBackend:
     def clarify(
         self,
         state: str,
-        normalized: dict[str, Any],
         question: str,
         options: dict[str, str],
-        probabilities: dict[str, float],
+        reason: str,
     ) -> dict[str, Any]:
-        DecisionState.model_validate(normalized)
         return self._generate_json(
-            "A separate decision model was uncertain. Re-express evidence more explicitly without selecting an "
-            "answer or inventing facts. Highlight conflicts and missing information.\n\n"
+            "A separate decision model was uncertain, so re-express decision-relevant evidence from the "
+            "original input without selecting an answer or inventing facts. Highlight conflicts and "
+            "missing information.\n\n"
             f"QUESTION:\n{question}\n\n"
             f"OPTIONS:\n{json.dumps(options, ensure_ascii=False)}\n\n"
             f"{self._state_block(state)}\n\n"
-            f"CURRENT STRUCTURED STATE:\n{json.dumps(normalized, ensure_ascii=False)}\n\n"
-            f"CURRENT OPTION PROBABILITIES:\n{json.dumps(probabilities)}\n\n"
-            "Return exactly the same decision-state schema."
+            f"REASON CLARIFICATION IS NEEDED:\n{reason}\n\n"
+            "Return exactly the decision-state schema with string arrays and option-keyed string-array "
+            'evidence maps: {"facts":[],"constraints":[],"risks":[],"evidence_for":{},'
+            '"evidence_against":{},"missing_information":[]}.'
         )
 
 

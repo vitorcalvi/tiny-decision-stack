@@ -44,6 +44,7 @@ class CaseTrace:
     second: StageScore | None = None
     second_latency_ms: float = 0.0
     second_error: str | None = None
+    no_new_evidence: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -225,12 +226,13 @@ def trace_case_pair(
         try:
             if normalized is None:
                 normalized = orchestrator.semantic.normalize(request.state, request.question, request.options)
-            clarified = orchestrator.semantic.clarify(
-                request.state, normalized, request.question, request.options, full_first.probabilities
-            )
-            full_second, second_error, _ = _attempt_decide(orchestrator, clarified, request)
-            full_trace.second = StageScore.from_scored(full_second) if full_second else None
-            full_trace.second_error = second_error
+            clarified = orchestrator.clarify_state(request, normalized)
+            if orchestrator._has_new_evidence(clarified, normalized):
+                full_second, second_error, _ = _attempt_decide(orchestrator, clarified, request)
+                full_trace.second = StageScore.from_scored(full_second) if full_second else None
+                full_trace.second_error = second_error
+            else:
+                full_trace.no_new_evidence = True
         except BackendValidationError as exc:
             full_trace.second_error = _error_name(exc)
         full_trace.second_latency_ms = (time.perf_counter() - started) * 1000.0
@@ -263,6 +265,15 @@ def simulate(trace: CaseTrace, threshold: float) -> SimulatedOutcome:
         and trace.first.confidence < threshold
     )
     if use_second:
+        if trace.no_new_evidence:
+            # Clarifier restated the first-pass input: abstain instead of re-rolling.
+            return SimulatedOutcome(
+                id=trace.id, task=trace.task, label=trace.label, variant=trace.variant, threshold=threshold,
+                choice=None, raw_choice=None, confidence=trace.first.confidence, answered=False,
+                correct=False, abstained=True, model_error=False, error_type=None,
+                used_clarification=True, initial_normalized=trace.initial_normalized,
+                mode="clarified", latency_ms=trace.first_latency_ms + trace.second_latency_ms,
+            )
         if trace.second_error is not None:
             return _error_outcome(
                 trace, threshold, trace.second_error, used_clarification=True,
