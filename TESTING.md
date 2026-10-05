@@ -85,6 +85,7 @@ This file intentionally duplicates critical safety contracts with explicit, audi
 - malformed integer environment settings fail at configuration time.
 - malformed/non-finite floating-point settings fail at configuration time.
 - configured numeric bounds are enforced.
+- the public `__version__`, the FastAPI app version, and the installed distribution version agree.
 
 The explicit contract suite is valuable for external reviewers because each critical invariant has a plainly named regression test instead of existing only inside randomized fuzzing.
 
