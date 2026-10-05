@@ -1,18 +1,66 @@
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from .backends import DecisionBackend, ScoredChoice, SemanticBackend, validate_scored_choice
 from .models import DecisionRequest, DecisionResponse
 
+SAFE_DEFAULT_CONFIDENCE_THRESHOLD = 0.75
+DEFAULT_DIRECT_MAX_CHARS = 500
+CLARIFY_REASON = (
+    "The first decision pass was inconclusive. Re-express only the decision-relevant "
+    "evidence that can be derived from the original input; do not choose an option."
+)
 
-@dataclass
+
+@dataclass(frozen=True)
+class DecisionPolicy:
+    """Caller-owned policy. Frozen so model or clarifier output can never mutate it."""
+
+    confidence_threshold: float = SAFE_DEFAULT_CONFIDENCE_THRESHOLD
+    direct_max_chars: int = DEFAULT_DIRECT_MAX_CHARS
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence_threshold <= 1.0:
+            raise ValueError("confidence_threshold must be within [0, 1]")
+        if self.direct_max_chars < 1:
+            raise ValueError("direct_max_chars must be >= 1")
+
+
+def _canonical(value: Any) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(value)
+
+
 class DecisionOrchestrator:
-    semantic: SemanticBackend
-    decider: DecisionBackend
-    default_confidence_threshold: float = 0.75
-    direct_max_chars: int = 500
+    def __init__(
+        self,
+        semantic: SemanticBackend,
+        decider: DecisionBackend,
+        policy: DecisionPolicy | None = None,
+        *,
+        default_confidence_threshold: float | None = None,
+        direct_max_chars: int | None = None,
+    ) -> None:
+        self.semantic = semantic
+        self.decider = decider
+        if policy is None:
+            policy = DecisionPolicy(
+                confidence_threshold=(
+                    SAFE_DEFAULT_CONFIDENCE_THRESHOLD
+                    if default_confidence_threshold is None
+                    else default_confidence_threshold
+                ),
+                direct_max_chars=(
+                    DEFAULT_DIRECT_MAX_CHARS if direct_max_chars is None else direct_max_chars
+                ),
+            )
+        self.policy = policy
 
     def _should_normalize(self, request: DecisionRequest) -> bool:
         if request.preprocess == "normalize":
@@ -21,7 +69,7 @@ class DecisionOrchestrator:
             return False
 
         state = request.state.strip()
-        if len(state) > self.direct_max_chars:
+        if len(state) > self.policy.direct_max_chars:
             return True
 
         # Structured JSON-like inputs and concise key/value states are already good
@@ -42,6 +90,26 @@ class DecisionOrchestrator:
             " conflicting ", " not sure ", " unknown ", " except ",
         )
         return any(marker in lowered for marker in ambiguity_markers)
+
+    def clarify_state(self, request: DecisionRequest, normalized: dict[str, Any]) -> dict[str, Any]:
+        """Ask the semantic backend for new evidence, withholding scores and labels.
+
+        New-contract backends receive only the original input and the reason. Legacy
+        five-positional backends receive the reason in the slot that used to hold the
+        first-pass probabilities, so no score, probability, or chosen label leaks.
+        """
+        clarify = self.semantic.clarify
+        try:
+            parameters = inspect.signature(clarify).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "reason" in parameters:
+            return clarify(request.state, request.question, request.options, CLARIFY_REASON)
+        return clarify(request.state, normalized, request.question, request.options, CLARIFY_REASON)
+
+    @staticmethod
+    def _has_new_evidence(clarified: dict[str, Any], baseline: dict[str, Any]) -> bool:
+        return _canonical(clarified) != _canonical(baseline)
 
     @staticmethod
     def _response(
@@ -64,10 +132,11 @@ class DecisionOrchestrator:
         )
 
     def decide(self, request: DecisionRequest) -> DecisionResponse:
+        policy = self.policy
         threshold = (
             request.confidence_threshold
             if request.confidence_threshold is not None
-            else self.default_confidence_threshold
+            else policy.confidence_threshold
         )
 
         normalized: dict | None = None
@@ -91,16 +160,21 @@ class DecisionOrchestrator:
                 normalized_state=normalized,
             )
 
+        # Structured baseline for the same original input the first pass saw. A
+        # clarifier that only restates it adds nothing and must not trigger a re-roll.
         if normalized is None:
             normalized = self.semantic.normalize(request.state, request.question, request.options)
 
-        clarified = self.semantic.clarify(
-            request.state,
-            normalized,
-            request.question,
-            request.options,
-            first.probabilities,
-        )
+        clarified = self.clarify_state(request, normalized)
+        if not self._has_new_evidence(clarified, normalized):
+            return self._response(
+                first,
+                threshold=threshold,
+                mode="clarified",
+                attempts=1,
+                normalized_state=clarified,
+            )
+
         second = validate_scored_choice(
             self.decider.decide(clarified, request.question, request.options), request.options
         )
