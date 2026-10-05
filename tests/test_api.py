@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from tiny_decision_stack import api
-from tiny_decision_stack.backends import BackendError, ScoredChoice
+from tiny_decision_stack.backends import BackendError
 from tiny_decision_stack.models import DecisionResponse
 
 
